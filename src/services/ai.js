@@ -18,6 +18,12 @@ class AIService {
 
     // Normalize accidental wrapping quotes/spaces from env files
     const normalizedKey = rawKey.trim().replace(/^['"]|['"]$/g, '');
+
+    // Guard against placeholder/comment-like values such as "// your key here"
+    if (!normalizedKey || normalizedKey.startsWith('//')) {
+      return '';
+    }
+
     return normalizedKey;
   }
 
@@ -58,7 +64,19 @@ class AIService {
     } catch (error) {
       console.error('AI API error:', error);
 
-      // If API fails, try smart local response first
+      const errorMessage = error?.message || '';
+
+      // Surface authentication problems clearly instead of failing silently
+      if (errorMessage.includes('401')) {
+        return {
+          success: true,
+          message: "I couldn't authenticate with OpenRouter (401). Please verify `VITE_OPENROUTER_API_KEY` in your `.env` file and restart the dev server.",
+          confidence: 1,
+          needsEscalation: false,
+        };
+      }
+
+      // If API fails for other reasons, try smart local response first
       const smart = await this.getSmartResponse(message, systemPrompt);
       if (smart.success && smart.confidence >= 0.6) {
         return smart;
