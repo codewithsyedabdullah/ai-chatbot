@@ -29,7 +29,7 @@ export const ChatInput = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200 bg-white">
+    <form onSubmit={handleSubmit} className="p-4 border-t border-gray-200/80 bg-white/90 backdrop-blur">
       <div className="flex gap-2 items-end">
         <div className="flex-1 relative">
           <input
@@ -39,7 +39,7 @@ export const ChatInput = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Type your message..."
-            className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="w-full px-4 py-3 pr-12 border border-gray-200 bg-white/95 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent shadow-sm"
             disabled={isTyping}
           />
           <button
