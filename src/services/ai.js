@@ -4,13 +4,15 @@ class AIService {
   constructor() {
     this.apiUrl = config.backend.apiUrl;
     this.conversationHistory = [];
-    this.apiKey = this.resolveApiKey();
-    this.model = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+    this.openRouterKey = this.resolveApiKey('VITE_OPENROUTER_API_KEY');
+    this.openAIKey = this.resolveApiKey('VITE_OPENAI_API_KEY');
+    this.openRouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+    this.openAIModel = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
   }
 
 
-  resolveApiKey() {
-    const rawKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  resolveApiKey(envKey) {
+    const rawKey = import.meta.env[envKey];
 
     if (typeof rawKey !== 'string') {
       return '';
@@ -27,8 +29,16 @@ class AIService {
     return normalizedKey;
   }
 
-  hasOpenRouterCompatibleKey() {
-    return typeof this.apiKey === 'string' && this.apiKey.startsWith('sk-or-');
+  resolveProvider() {
+    if (typeof this.openRouterKey === 'string' && this.openRouterKey.startsWith('sk-or-')) {
+      return 'openrouter';
+    }
+
+    if (typeof this.openAIKey === 'string' && this.openAIKey.startsWith('sk-')) {
+      return 'openai';
+    }
+
+    return null;
   }
 
   /**
@@ -37,13 +47,15 @@ class AIService {
    */
   async sendMessage(message, systemPrompt = '', conversationHistory = []) {
     try {
-      // If no compatible OpenRouter key is configured, use local smart responses first
-      if (!this.hasOpenRouterCompatibleKey()) {
-        console.warn('OpenRouter key missing/invalid. Set VITE_OPENROUTER_API_KEY and restart the app. Falling back to local smart responses.');
+      const provider = this.resolveProvider();
+
+      // If no provider key is configured, use local smart responses first
+      if (!provider) {
+        console.warn('No AI API key configured. Set VITE_OPENROUTER_API_KEY or VITE_OPENAI_API_KEY and restart the app. Falling back to local smart responses.');
         return this.getSmartResponse(message, systemPrompt);
       }
 
-      const response = await this.callOpenRouterAPI(message, systemPrompt, conversationHistory);
+      const response = await this.callProviderAPI(provider, message, systemPrompt, conversationHistory);
 
       // Decide if escalation is needed
       const escalate = this.shouldEscalate(response);
@@ -68,7 +80,7 @@ class AIService {
 
       // If auth fails, keep chat useful with local AI-style responses
       if (errorMessage.includes('401')) {
-        console.warn('OpenRouter returned 401. Check VITE_OPENROUTER_API_KEY and account status. Falling back to local responses.');
+        console.warn('AI provider returned 401. Check your configured API key and account status. Falling back to local responses.');
       }
 
       // If API fails, try smart local response first
@@ -93,6 +105,18 @@ class AIService {
     }
   }
 
+  async callProviderAPI(provider, userMessage, systemPrompt = '', history = []) {
+    if (provider === 'openrouter') {
+      return this.callOpenRouterAPI(userMessage, systemPrompt, history);
+    }
+
+    if (provider === 'openai') {
+      return this.callOpenAIAPI(userMessage, systemPrompt, history);
+    }
+
+    throw new Error('No valid AI provider configured.');
+  }
+
   /**
    * Calls OpenRouter / Groq API
    */
@@ -111,12 +135,12 @@ class AIService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
+        'Authorization': `Bearer ${this.openRouterKey}`,
         'HTTP-Referer': window.location.origin,
         'X-Title': 'AI Chatbot Widget',
       },
       body: JSON.stringify({
-        model: this.model,
+        model: this.openRouterModel,
         messages,
         max_tokens: 1024
       })
@@ -137,6 +161,52 @@ class AIService {
     }
 
     // Extract AI message
+    const messageText = data?.choices?.[0]?.message?.content || "I'm not sure about that.";
+
+    return {
+      success: true,
+      message: messageText,
+      confidence: 0.9
+    };
+  }
+
+  async callOpenAIAPI(userMessage, systemPrompt = '', history = []) {
+    const messages = [
+      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+      ...history.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      })),
+      { role: 'user', content: userMessage }
+    ];
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.openAIKey}`,
+      },
+      body: JSON.stringify({
+        model: this.openAIModel,
+        messages,
+        max_tokens: 1024
+      })
+    });
+
+    const rawBody = await response.text();
+    let data = null;
+
+    try {
+      data = rawBody ? JSON.parse(rawBody) : null;
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      const apiMessage = data?.error?.message || rawBody || `${response.status} ${response.statusText}`;
+      throw new Error(`OpenAI API request failed (${response.status}): ${apiMessage}`);
+    }
+
     const messageText = data?.choices?.[0]?.message?.content || "I'm not sure about that.";
 
     return {
