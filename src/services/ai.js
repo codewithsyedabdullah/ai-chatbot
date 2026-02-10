@@ -4,13 +4,16 @@ class AIService {
   constructor() {
     this.apiUrl = config.backend.apiUrl;
     this.conversationHistory = [];
-    this.apiKey = this.resolveApiKey();
-    this.model = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+    this.groqKey = this.resolveApiKey('VITE_GROQ_API_KEY');
+    this.openRouterKey = this.resolveApiKey('VITE_OPENROUTER_API_KEY');
+    this.openAIKey = this.resolveApiKey('VITE_OPENAI_API_KEY');
+    this.groqModel = import.meta.env.VITE_GROQ_MODEL || 'llama-3.1-8b-instant';
+    this.openRouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+    this.openAIModel = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
   }
 
-
-  resolveApiKey() {
-    const rawKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  resolveApiKey(envKey) {
+    const rawKey = import.meta.env[envKey];
 
     if (typeof rawKey !== 'string') {
       return '';
@@ -27,8 +30,21 @@ class AIService {
     return normalizedKey;
   }
 
-  hasOpenRouterCompatibleKey() {
-    return typeof this.apiKey === 'string' && this.apiKey.startsWith('sk-or-');
+  resolveProvider() {
+    // Prefer Groq when configured, per current project requirement.
+    if (typeof this.groqKey === 'string' && this.groqKey.startsWith('gsk_')) {
+      return 'groq';
+    }
+
+    if (typeof this.openRouterKey === 'string' && this.openRouterKey.startsWith('sk-or-')) {
+      return 'openrouter';
+    }
+
+    if (typeof this.openAIKey === 'string' && this.openAIKey.startsWith('sk-')) {
+      return 'openai';
+    }
+
+    return null;
   }
 
   /**
@@ -37,13 +53,15 @@ class AIService {
    */
   async sendMessage(message, systemPrompt = '', conversationHistory = []) {
     try {
-      // If no compatible OpenRouter key is configured, use local smart responses first
-      if (!this.hasOpenRouterCompatibleKey()) {
-        console.warn('OpenRouter key missing/invalid. Set VITE_OPENROUTER_API_KEY and restart the app. Falling back to local smart responses.');
+      const provider = this.resolveProvider();
+
+      // If no provider key is configured, use local smart responses first
+      if (!provider) {
+        console.warn('No AI API key configured. Set VITE_GROQ_API_KEY (recommended), VITE_OPENROUTER_API_KEY, or VITE_OPENAI_API_KEY and restart the app. Falling back to local smart responses.');
         return this.getSmartResponse(message, systemPrompt);
       }
 
-      const response = await this.callOpenRouterAPI(message, systemPrompt, conversationHistory);
+      const response = await this.callProviderAPI(provider, message, systemPrompt, conversationHistory);
 
       // Decide if escalation is needed
       const escalate = this.shouldEscalate(response);
@@ -52,7 +70,7 @@ class AIService {
         return {
           success: true,
           message: response.message,
-          escalation: "Would you like to speak with a team member? I can have someone reach out to you.",
+          escalation: 'Would you like to speak with a team member? I can have someone reach out to you.',
         };
       }
 
@@ -60,7 +78,6 @@ class AIService {
         success: true,
         message: response.message,
       };
-
     } catch (error) {
       console.error('AI API error:', error);
 
@@ -68,7 +85,7 @@ class AIService {
 
       // If auth fails, keep chat useful with local AI-style responses
       if (errorMessage.includes('401')) {
-        console.warn('OpenRouter returned 401. Check VITE_OPENROUTER_API_KEY and account status. Falling back to local responses.');
+        console.warn('AI provider returned 401. Check your configured API key and account status. Falling back to local responses.');
       }
 
       // If API fails, try smart local response first
@@ -85,7 +102,7 @@ class AIService {
         return {
           success: true,
           message: fallback.message,
-          escalation: "Would you like to speak with a team member? I can have someone reach out to you.",
+          escalation: 'Would you like to speak with a team member? I can have someone reach out to you.',
         };
       }
 
@@ -93,35 +110,34 @@ class AIService {
     }
   }
 
-  /**
-   * Calls OpenRouter / Groq API
-   */
-  async callOpenRouterAPI(userMessage, systemPrompt = '', history = []) {
-    // Build conversation context
-    const messages = [
+  async callProviderAPI(provider, userMessage, systemPrompt = '', history = []) {
+    if (provider === 'groq') {
+      return this.callGroqAPI(userMessage, systemPrompt, history);
+    }
+
+    if (provider === 'openrouter') {
+      return this.callOpenRouterAPI(userMessage, systemPrompt, history);
+    }
+
+    if (provider === 'openai') {
+      return this.callOpenAIAPI(userMessage, systemPrompt, history);
+    }
+
+    throw new Error('No valid AI provider configured.');
+  }
+
+  buildMessages(userMessage, systemPrompt = '', history = []) {
+    return [
       ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-      ...history.map(msg => ({
+      ...history.map((msg) => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.text
+        content: msg.text,
       })),
-      { role: 'user', content: userMessage }
+      { role: 'user', content: userMessage },
     ];
+  }
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'AI Chatbot Widget',
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages,
-        max_tokens: 1024
-      })
-    });
-
+  async parseProviderResponse(response, providerLabel) {
     const rawBody = await response.text();
     let data = null;
 
@@ -133,17 +149,78 @@ class AIService {
 
     if (!response.ok) {
       const apiMessage = data?.error?.message || rawBody || `${response.status} ${response.statusText}`;
-      throw new Error(`OpenRouter API request failed (${response.status}): ${apiMessage}`);
+      throw new Error(`${providerLabel} API request failed (${response.status}): ${apiMessage}`);
     }
 
-    // Extract AI message
     const messageText = data?.choices?.[0]?.message?.content || "I'm not sure about that.";
 
     return {
       success: true,
       message: messageText,
-      confidence: 0.9
+      confidence: 0.9,
     };
+  }
+
+  async callGroqAPI(userMessage, systemPrompt = '', history = []) {
+    const messages = this.buildMessages(userMessage, systemPrompt, history);
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.groqKey}`,
+      },
+      body: JSON.stringify({
+        model: this.groqModel,
+        messages,
+        max_tokens: 1024,
+      }),
+    });
+
+    return this.parseProviderResponse(response, 'Groq');
+  }
+
+  /**
+   * Calls OpenRouter API
+   */
+  async callOpenRouterAPI(userMessage, systemPrompt = '', history = []) {
+    const messages = this.buildMessages(userMessage, systemPrompt, history);
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.openRouterKey}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'AI Chatbot Widget',
+      },
+      body: JSON.stringify({
+        model: this.openRouterModel,
+        messages,
+        max_tokens: 1024,
+      }),
+    });
+
+    return this.parseProviderResponse(response, 'OpenRouter');
+  }
+
+  async callOpenAIAPI(userMessage, systemPrompt = '', history = []) {
+    const messages = this.buildMessages(userMessage, systemPrompt, history);
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.openAIKey}`,
+      },
+      body: JSON.stringify({
+        model: this.openAIModel,
+        messages,
+        max_tokens: 1024,
+      }),
+    });
+
+    return this.parseProviderResponse(response, 'OpenAI');
   }
 
   /**
@@ -153,23 +230,23 @@ class AIService {
     const lowercaseMsg = message.toLowerCase();
 
     if (lowercaseMsg.includes('hello') || lowercaseMsg.includes('hi')) {
-      return { success: true, message: "Hello! How can I assist you today?", confidence: 0.8 };
+      return { success: true, message: 'Hello! How can I assist you today?', confidence: 0.8 };
     }
 
     if (lowercaseMsg.includes('price') || lowercaseMsg.includes('cost')) {
       return {
         success: true,
         message: "I'd be happy to help you with pricing information. Could you please specify which product or service you're interested in?",
-        confidence: 0.7
+        confidence: 0.7,
       };
     }
 
     if (lowercaseMsg.includes('contact') || lowercaseMsg.includes('phone') || lowercaseMsg.includes('email')) {
       return {
         success: true,
-        message: "I can help you get in touch with our team. Would you like to speak with a human representative?",
+        message: 'I can help you get in touch with our team. Would you like to speak with a human representative?',
         confidence: 0.55,
-        needsEscalation: true
+        needsEscalation: true,
       };
     }
 
@@ -177,16 +254,17 @@ class AIService {
       return {
         success: true,
         message: "You're welcome! Is there anything else I can help you with?",
-        confidence: 0.9
+        confidence: 0.9,
       };
     }
 
     // Default fallback
     return {
       success: true,
-      message: "Great question. I can still help with general guidance—if you want exact details for your case, I can connect you with a specialist as a next step.",
+      message:
+        'Great question. I can still help with general guidance—if you want exact details for your case, I can connect you with a specialist as a next step.',
       confidence: 0.65,
-      needsEscalation: false
+      needsEscalation: false,
     };
   }
 
@@ -203,26 +281,22 @@ class AIService {
    */
   async getSmartResponse(message, systemPrompt = '') {
     const responses = {
-      greeting: [
-        "Hello! How can I help you today?",
-        "Hi there! What can I do for you?",
-        "Welcome! How may I assist you?"
-      ],
+      greeting: ['Hello! How can I help you today?', 'Hi there! What can I do for you?', 'Welcome! How may I assist you?'],
       help: [
         "I'm here to help! What would you like to know?",
         "I'd be happy to assist you. What do you need help with?",
-        "Let me help you with that. What's your question?"
+        "Let me help you with that. What's your question?",
       ],
       thanks: [
         "You're welcome! Anything else I can help with?",
-        "Happy to help! Let me know if you need anything else.",
-        "My pleasure! Is there anything else you'd like to know?"
+        'Happy to help! Let me know if you need anything else.',
+        "My pleasure! Is there anything else you'd like to know?",
       ],
       unknown: [
-        "That’s a good question about \"{topic}\" — here’s what I can share based on what I know so far.",
-        "I can help with \"{topic}\". Could you share a bit more detail so I can give a better answer?",
-        "I can provide general guidance on \"{topic}\", and if needed I can also connect you with a specialist."
-      ]
+        'That’s a good question about "{topic}" — here’s what I can share based on what I know so far.',
+        'I can help with "{topic}". Could you share a bit more detail so I can give a better answer?',
+        'I can provide general guidance on "{topic}", and if needed I can also connect you with a specialist.',
+      ],
     };
 
     const msg = message.toLowerCase();
@@ -231,7 +305,7 @@ class AIService {
       return {
         success: true,
         message: responses.greeting[Math.floor(Math.random() * responses.greeting.length)],
-        confidence: 0.9
+        confidence: 0.9,
       };
     }
 
@@ -239,7 +313,7 @@ class AIService {
       return {
         success: true,
         message: responses.thanks[Math.floor(Math.random() * responses.thanks.length)],
-        confidence: 0.9
+        confidence: 0.9,
       };
     }
 
@@ -247,7 +321,7 @@ class AIService {
       return {
         success: true,
         message: responses.help[Math.floor(Math.random() * responses.help.length)],
-        confidence: 0.8
+        confidence: 0.8,
       };
     }
 
@@ -259,7 +333,7 @@ class AIService {
       success: true,
       message: template.replace('{topic}', topic),
       confidence: 0.7,
-      needsEscalation: false
+      needsEscalation: false,
     };
   }
 }
