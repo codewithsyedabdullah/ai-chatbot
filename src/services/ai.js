@@ -66,17 +66,12 @@ class AIService {
 
       const errorMessage = error?.message || '';
 
-      // Surface authentication problems clearly instead of failing silently
+      // If auth fails, keep chat useful with local AI-style responses
       if (errorMessage.includes('401')) {
-        return {
-          success: true,
-          message: "I couldn't authenticate with OpenRouter (401). Please verify `VITE_OPENROUTER_API_KEY` in your `.env` file and restart the dev server.",
-          confidence: 1,
-          needsEscalation: false,
-        };
+        console.warn('OpenRouter returned 401. Check VITE_OPENROUTER_API_KEY and account status. Falling back to local responses.');
       }
 
-      // If API fails for other reasons, try smart local response first
+      // If API fails, try smart local response first
       const smart = await this.getSmartResponse(message, systemPrompt);
       if (smart.success && smart.confidence >= 0.6) {
         return smart;
