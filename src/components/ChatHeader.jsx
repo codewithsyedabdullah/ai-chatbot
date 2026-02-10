@@ -6,7 +6,7 @@ export const ChatHeader = ({ onClose, onMinimize }) => {
   const { config, resetChat } = useChatContext();
   
   return (
-    <div className="bg-gradient-to-r from-primary-500 to-primary-600 text-white p-4 flex justify-between items-center shadow-lg">
+    <div className="bg-gradient-to-r from-primary-500 via-primary-600 to-indigo-600 text-white p-4 flex justify-between items-center shadow-lg">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-2xl backdrop-blur-sm">
           {config.icon}

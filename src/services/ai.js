@@ -56,6 +56,7 @@ class AIService {
   async callOpenRouterAPI(userMessage, systemPrompt = '', history = []) {
     // Build conversation context
     const messages = [
+      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
       ...history.map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
         content: msg.text
@@ -112,7 +113,8 @@ class AIService {
       return {
         success: true,
         message: "I can help you get in touch with our team. Would you like to speak with a human representative?",
-        confidence: 0.8
+        confidence: 0.55,
+        needsEscalation: true
       };
     }
 
@@ -126,10 +128,10 @@ class AIService {
 
     // Default fallback
     return {
-      success: false,
-      message: "I'm not sure about that, but I'd be happy to connect you with someone who can help. Would you like to speak with a team member?",
-      confidence: 0.3,
-      needsEscalation: true
+      success: true,
+      message: "Great question. I can still help with general guidance—if you want exact details for your case, I can connect you with a specialist as a next step.",
+      confidence: 0.65,
+      needsEscalation: false
     };
   }
 
