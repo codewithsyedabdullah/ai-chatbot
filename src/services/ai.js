@@ -5,11 +5,7 @@ class AIService {
     this.apiUrl = config.backend.apiUrl;
     this.conversationHistory = [];
     this.groqKey = this.resolveApiKey('VITE_GROQ_API_KEY');
-    this.openRouterKey = this.resolveApiKey('VITE_OPENROUTER_API_KEY');
-    this.openAIKey = this.resolveApiKey('VITE_OPENAI_API_KEY');
     this.groqModel = import.meta.env.VITE_GROQ_MODEL || 'llama-3.1-8b-instant';
-    this.openRouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4o-mini';
-    this.openAIModel = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
   }
 
   resolveApiKey(envKey) {
@@ -30,21 +26,8 @@ class AIService {
     return normalizedKey;
   }
 
-  resolveProvider() {
-    // Prefer Groq when configured, per current project requirement.
-    if (typeof this.groqKey === 'string' && this.groqKey.startsWith('gsk_')) {
-      return 'groq';
-    }
-
-    if (typeof this.openRouterKey === 'string' && this.openRouterKey.startsWith('sk-or-')) {
-      return 'openrouter';
-    }
-
-    if (typeof this.openAIKey === 'string' && this.openAIKey.startsWith('sk-')) {
-      return 'openai';
-    }
-
-    return null;
+  hasGroqKey() {
+    return typeof this.groqKey === 'string' && this.groqKey.startsWith('gsk_');
   }
 
   /**
@@ -53,15 +36,13 @@ class AIService {
    */
   async sendMessage(message, systemPrompt = '', conversationHistory = []) {
     try {
-      const provider = this.resolveProvider();
-
-      // If no provider key is configured, use local smart responses first
-      if (!provider) {
-        console.warn('No AI API key configured. Set VITE_GROQ_API_KEY (recommended), VITE_OPENROUTER_API_KEY, or VITE_OPENAI_API_KEY and restart the app. Falling back to local smart responses.');
+      // Groq-only provider mode
+      if (!this.hasGroqKey()) {
+        console.warn('Groq API key missing/invalid. Set VITE_GROQ_API_KEY and restart the app. Falling back to local smart responses.');
         return this.getSmartResponse(message, systemPrompt);
       }
 
-      const response = await this.callProviderAPI(provider, message, systemPrompt, conversationHistory);
+      const response = await this.callGroqAPI(message, systemPrompt, conversationHistory);
 
       // Decide if escalation is needed
       const escalate = this.shouldEscalate(response);
@@ -85,7 +66,7 @@ class AIService {
 
       // If auth fails, keep chat useful with local AI-style responses
       if (errorMessage.includes('401')) {
-        console.warn('AI provider returned 401. Check your configured API key and account status. Falling back to local responses.');
+        console.warn('Groq returned 401. Check VITE_GROQ_API_KEY and account status. Falling back to local responses.');
       }
 
       // If API fails, try smart local response first
@@ -108,22 +89,6 @@ class AIService {
 
       return fallback;
     }
-  }
-
-  async callProviderAPI(provider, userMessage, systemPrompt = '', history = []) {
-    if (provider === 'groq') {
-      return this.callGroqAPI(userMessage, systemPrompt, history);
-    }
-
-    if (provider === 'openrouter') {
-      return this.callOpenRouterAPI(userMessage, systemPrompt, history);
-    }
-
-    if (provider === 'openai') {
-      return this.callOpenAIAPI(userMessage, systemPrompt, history);
-    }
-
-    throw new Error('No valid AI provider configured.');
   }
 
   buildMessages(userMessage, systemPrompt = '', history = []) {
@@ -178,49 +143,6 @@ class AIService {
     });
 
     return this.parseProviderResponse(response, 'Groq');
-  }
-
-  /**
-   * Calls OpenRouter API
-   */
-  async callOpenRouterAPI(userMessage, systemPrompt = '', history = []) {
-    const messages = this.buildMessages(userMessage, systemPrompt, history);
-
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.openRouterKey}`,
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'AI Chatbot Widget',
-      },
-      body: JSON.stringify({
-        model: this.openRouterModel,
-        messages,
-        max_tokens: 1024,
-      }),
-    });
-
-    return this.parseProviderResponse(response, 'OpenRouter');
-  }
-
-  async callOpenAIAPI(userMessage, systemPrompt = '', history = []) {
-    const messages = this.buildMessages(userMessage, systemPrompt, history);
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.openAIKey}`,
-      },
-      body: JSON.stringify({
-        model: this.openAIModel,
-        messages,
-        max_tokens: 1024,
-      }),
-    });
-
-    return this.parseProviderResponse(response, 'OpenAI');
   }
 
   /**
