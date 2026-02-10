@@ -13,6 +13,11 @@ class AIService {
    */
   async sendMessage(message, systemPrompt = '', conversationHistory = []) {
     try {
+      // If no API key is configured, use local smart responses first
+      if (!this.apiKey) {
+        return this.getSmartResponse(message, systemPrompt);
+      }
+
       const response = await this.callOpenRouterAPI(message, systemPrompt, conversationHistory);
 
       // Decide if escalation is needed
@@ -34,13 +39,19 @@ class AIService {
     } catch (error) {
       console.error('AI API error:', error);
 
-      // Fallback if API fails
+      // If API fails, try smart local response first
+      const smart = await this.getSmartResponse(message, systemPrompt);
+      if (smart.success && smart.confidence >= 0.6) {
+        return smart;
+      }
+
+      // Then fallback keyword response
       const fallback = this.getFallbackResponse(message);
       const escalate = this.shouldEscalate(fallback);
 
       if (escalate) {
         return {
-          success: fallback.success,
+          success: true,
           message: fallback.message,
           escalation: "Would you like to speak with a team member? I can have someone reach out to you.",
         };
@@ -56,6 +67,7 @@ class AIService {
   async callOpenRouterAPI(userMessage, systemPrompt = '', history = []) {
     // Build conversation context
     const messages = [
+      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
       ...history.map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
         content: msg.text
@@ -70,7 +82,7 @@ class AIService {
         'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Replace with your Groq model if needed
+        model: 'gpt-4o-mini',
         messages,
         max_tokens: 1024
       })
@@ -112,7 +124,8 @@ class AIService {
       return {
         success: true,
         message: "I can help you get in touch with our team. Would you like to speak with a human representative?",
-        confidence: 0.8
+        confidence: 0.55,
+        needsEscalation: true
       };
     }
 
@@ -126,10 +139,10 @@ class AIService {
 
     // Default fallback
     return {
-      success: false,
-      message: "I'm not sure about that, but I'd be happy to connect you with someone who can help. Would you like to speak with a team member?",
-      confidence: 0.3,
-      needsEscalation: true
+      success: true,
+      message: "Great question. I can still help with general guidance—if you want exact details for your case, I can connect you with a specialist as a next step.",
+      confidence: 0.65,
+      needsEscalation: false
     };
   }
 
@@ -162,9 +175,9 @@ class AIService {
         "My pleasure! Is there anything else you'd like to know?"
       ],
       unknown: [
-        "I'm not entirely sure about that. Would you like me to connect you with a specialist?",
-        "That's a great question! Let me get you in touch with someone who can provide the best answer.",
-        "I want to make sure you get accurate information. Would you like to speak with a team member?"
+        "That’s a good question — here’s what I can share based on what I know so far.",
+        "I can help with that. Could you share a bit more detail so I can give a better answer?",
+        "I can provide general guidance, and if needed I can also connect you with a specialist."
       ]
     };
 
@@ -194,12 +207,12 @@ class AIService {
       };
     }
 
-    // For other queries, suggest escalation
+    // For unknown queries, return a useful answer first and avoid immediate escalation
     return {
-      success: false,
+      success: true,
       message: responses.unknown[Math.floor(Math.random() * responses.unknown.length)],
-      confidence: 0.4,
-      needsEscalation: true
+      confidence: 0.7,
+      needsEscalation: false
     };
   }
 }

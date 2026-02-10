@@ -21,14 +21,14 @@ export const ChatWindow = ({ onClose, onMinimize }) => {
   }, [messages, isTyping]);
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-2xl shadow-2xl overflow-hidden">
+    <div className="flex flex-col h-full rounded-3xl border border-white/60 bg-white/80 shadow-2xl backdrop-blur-xl overflow-hidden">
       <ChatHeader onClose={onClose} onMinimize={onMinimize} />
       
       <div className="flex-1 flex flex-col relative overflow-hidden">
         {/* Messages Container */}
         <div 
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto p-4 chat-messages"
+          className="flex-1 overflow-y-auto p-4 chat-messages bg-gradient-to-b from-slate-50/80 via-white to-indigo-50/40"
         >
           {messages.map((message) => (
             <ChatMessage key={message.id} message={message} />

@@ -31,6 +31,9 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
   const [sessionId] = useState(() => `session_${Date.now()}`);
   const [conversationSaved, setConversationSaved] = useState(false);
 
+  const ESCALATION_PROMPT = "Would you like to speak with a team member? I can have someone reach out to you.";
+
+
   const addMessage = useCallback((text, sender = 'user') => {
     const message = {
       id: Date.now() + Math.random(),
@@ -67,23 +70,21 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
     setIsTyping(true);
     
     try {
-      // Get AI response
-      const response = await aiService.getSmartResponse(
+      // Get AI response from API with fallback support
+      const response = await aiService.sendMessage(
         userMessage,
-        config.systemPrompt
+        config.systemPrompt,
+        messages
       );
       
       setTimeout(() => {
         addMessage(response.message, 'bot');
         setIsTyping(false);
         
-        // Check if escalation is needed
-        if (response.needsEscalation || response.confidence < 0.6) {
+        // Ask and then open lead form to restore contact collection flow
+        if (response.escalation) {
           setTimeout(() => {
-            addMessage(
-              "Would you like to speak with a team member? I can have someone reach out to you.",
-              'bot'
-            );
+            addMessage(response.escalation, 'bot');
             setShowLeadForm(true);
           }, 1000);
         }
@@ -100,17 +101,28 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
         setShowLeadForm(true);
       }, 1000);
     }
-  }, [config, addMessage]);
+  }, [config, messages, addMessage]);
 
   const handleSendMessage = useCallback(async (text) => {
     if (!text.trim()) return;
+
+    const normalized = text.trim().toLowerCase();
+    const lastBotMessage = [...messages].reverse().find((m) => m.sender === 'bot')?.text || '';
+
+    // If user confirms escalation, immediately show lead form
+    if (lastBotMessage.includes(ESCALATION_PROMPT) && normalized.match(/^(yes|yeah|yep|sure|ok|okay|please|connect me)/)) {
+      addMessage(text, 'user');
+      addMessage("Perfect — please share your contact details and our team will reach out.", 'bot');
+      setShowLeadForm(true);
+      return;
+    }
     
     // Add user message
     addMessage(text, 'user');
     
     // Process AI response
     await sendMessageToAI(text);
-  }, [addMessage, sendMessageToAI]);
+  }, [addMessage, messages, sendMessageToAI]);
 
   const handleLeadSubmit = useCallback(async (leadData) => {
     try {
