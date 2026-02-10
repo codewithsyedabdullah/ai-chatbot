@@ -2,145 +2,57 @@ import React from 'react';
 import { ChatbotWidget } from './components/ChatbotWidget';
 import './index.css';
 
+const INDUSTRIES = [
+  { key: 'realEstate', label: '🏡 Real Estate', classes: 'from-blue-100 to-cyan-100 border-blue-200' },
+  { key: 'healthcare', label: '🏥 Healthcare', classes: 'from-emerald-100 to-green-100 border-emerald-200' },
+  { key: 'ecommerce', label: '🛍️ E-commerce', classes: 'from-orange-100 to-amber-100 border-orange-200' },
+  { key: 'education', label: '🎓 Education', classes: 'from-violet-100 to-purple-100 border-violet-200' },
+  { key: 'finance', label: '💰 Finance', classes: 'from-cyan-100 to-sky-100 border-cyan-200' },
+  { key: 'default', label: '🤖 General', classes: 'from-indigo-100 to-blue-100 border-indigo-200' },
+];
+
 function App() {
-  // Get industry from URL params or use default
   const params = new URLSearchParams(window.location.search);
   const industry = params.get('industry') || 'default';
   const position = params.get('position') || 'bottom-right';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Demo Page Content */}
-      <div className="container mx-auto px-4 py-12">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h1 className="text-5xl font-bold text-gray-900 mb-4 font-display">
+    <div className="min-h-screen app-bg text-gray-800">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-primary-300/30 blur-3xl" />
+        <div className="absolute top-1/3 -right-28 h-96 w-96 rounded-full bg-blue-300/30 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 h-96 w-96 rounded-full bg-purple-300/20 blur-3xl" />
+      </div>
+
+      <div className="relative container mx-auto px-4 py-12">
+        <div className="mx-auto max-w-5xl space-y-8">
+          <div className="rounded-3xl border border-white/50 bg-white/80 p-10 shadow-2xl backdrop-blur-md">
+            <p className="mb-3 text-sm font-semibold uppercase tracking-[0.2em] text-primary-700">Modern Conversational UI</p>
+            <h1 className="mb-4 text-5xl font-bold text-gray-900 font-display leading-tight">
               AI Chatbot Widget Demo
             </h1>
-            <p className="text-xl text-gray-600">
-              Multi-industry AI chatbot with lead capture & human escalation
+            <p className="max-w-3xl text-lg text-gray-600">
+              Beautiful, responsive chatbot experience with AI-first conversation flow and smooth escalation when a specialist is needed.
             </p>
           </div>
 
-          {/* Industry Selector */}
-          <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-800">Try Different Industries</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {[
-                { key: 'realEstate', label: '🏡 Real Estate', color: 'blue' },
-                { key: 'healthcare', label: '🏥 Healthcare', color: 'green' },
-                { key: 'ecommerce', label: '🛍️ E-commerce', color: 'orange' },
-                { key: 'education', label: '🎓 Education', color: 'purple' },
-                { key: 'finance', label: '💰 Finance', color: 'cyan' },
-                { key: 'default', label: '🤖 General', color: 'indigo' },
-              ].map((ind) => (
+          <div className="rounded-3xl border border-white/50 bg-white/85 p-8 shadow-xl backdrop-blur-md">
+            <h2 className="mb-5 text-2xl font-semibold text-gray-800">Try Different Industries</h2>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+              {INDUSTRIES.map((ind) => (
                 <a
                   key={ind.key}
                   href={`?industry=${ind.key}`}
-                  className={`p-4 bg-gradient-to-br from-${ind.color}-50 to-${ind.color}-100 border-2 border-${ind.color}-200 rounded-xl hover:shadow-lg transition-all text-center font-medium text-gray-700 hover:scale-105`}
+                  className={`rounded-2xl border bg-gradient-to-br p-4 text-center font-medium transition-all hover:-translate-y-0.5 hover:shadow-lg ${ind.classes}`}
                 >
                   {ind.label}
                 </a>
               ))}
             </div>
           </div>
-
-          {/* Features */}
-          <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-            <h2 className="text-2xl font-semibold mb-6 text-gray-800">Features</h2>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">🤖</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 mb-1">AI-Powered Responses</h3>
-                  <p className="text-sm text-gray-600">Intelligent conversation handling with context awareness</p>
-                </div>
-              </div>
-              
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">📝</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 mb-1">Lead Capture</h3>
-                  <p className="text-sm text-gray-600">Automatic collection of user contact information</p>
-                </div>
-              </div>
-              
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">🚀</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 mb-1">Human Escalation</h3>
-                  <p className="text-sm text-gray-600">Seamless handoff when AI confidence is low</p>
-                </div>
-              </div>
-              
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">🎨</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 mb-1">Multi-Industry</h3>
-                  <p className="text-sm text-gray-600">Customizable for different business types</p>
-                </div>
-              </div>
-              
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">💾</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 mb-1">Data Storage</h3>
-                  <p className="text-sm text-gray-600">Supabase integration with localStorage fallback</p>
-                </div>
-              </div>
-              
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">📱</span>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-800 mb-1">Responsive Design</h3>
-                  <p className="text-sm text-gray-600">Works perfectly on all devices</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Instructions */}
-          <div className="bg-gradient-to-r from-primary-500 to-primary-600 rounded-2xl shadow-xl p-8 text-white">
-            <h2 className="text-2xl font-semibold mb-4">How to Use</h2>
-            <ol className="space-y-3 text-primary-50">
-              <li className="flex gap-3">
-                <span className="font-bold">1.</span>
-                <span>Click the chat button in the bottom-right corner</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="font-bold">2.</span>
-                <span>Try the quick reply buttons or type your own message</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="font-bold">3.</span>
-                <span>Click "Talk to Admin" or ask complex questions to trigger lead capture</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="font-bold">4.</span>
-                <span>Fill in your information to see the lead capture in action</span>
-              </li>
-              <li className="flex gap-3">
-                <span className="font-bold">5.</span>
-                <span>Check localStorage or Supabase to see saved data</span>
-              </li>
-            </ol>
-          </div>
         </div>
       </div>
 
-      {/* Chatbot Widget */}
       <ChatbotWidget industry={industry} position={position} />
     </div>
   );

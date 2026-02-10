@@ -67,24 +67,21 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
     setIsTyping(true);
     
     try {
-      // Get AI response
-      const response = await aiService.getSmartResponse(
+      // Get AI response from API with fallback support
+      const response = await aiService.sendMessage(
         userMessage,
-        config.systemPrompt
+        config.systemPrompt,
+        messages
       );
       
       setTimeout(() => {
         addMessage(response.message, 'bot');
         setIsTyping(false);
         
-        // Check if escalation is needed
-        if (response.needsEscalation || response.confidence < 0.6) {
+        // Ask before opening lead form (do not force the form immediately)
+        if (response.escalation) {
           setTimeout(() => {
-            addMessage(
-              "Would you like to speak with a team member? I can have someone reach out to you.",
-              'bot'
-            );
-            setShowLeadForm(true);
+            addMessage(response.escalation, 'bot');
           }, 1000);
         }
       }, 1000 + Math.random() * 1000); // Random delay for natural feel
@@ -100,7 +97,7 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
         setShowLeadForm(true);
       }, 1000);
     }
-  }, [config, addMessage]);
+  }, [config, messages, addMessage]);
 
   const handleSendMessage = useCallback(async (text) => {
     if (!text.trim()) return;
