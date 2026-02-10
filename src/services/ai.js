@@ -4,78 +4,102 @@ class AIService {
   constructor() {
     this.apiUrl = config.backend.apiUrl;
     this.conversationHistory = [];
+    this.apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;  // OpenRouter / Groq API key
   }
 
-  async sendMessage(message, systemPrompt, conversationHistory = []) {
+  /**
+   * Main function to send a message and get a response
+   * Includes AI response + fallback + escalation handling
+   */
+  async sendMessage(message, systemPrompt = '', conversationHistory = []) {
     try {
-      // For demo purposes, we'll use the Anthropic API through Claude.ai
-      // In production, this should go through your backend
-      const response = await this.callAnthropicAPI(message, systemPrompt, conversationHistory);
-      return response;
-    } catch (error) {
-      console.error('Error in AI service:', error);
-      return this.getFallbackResponse(message);
-    }
-  }
+      const response = await this.callOpenRouterAPI(message, systemPrompt, conversationHistory);
 
-  async callAnthropicAPI(userMessage, systemPrompt, history) {
-    try {
-      // Build conversation context
-      const messages = [
-        ...history.map(msg => ({
-          role: msg.sender === 'user' ? 'user' : 'assistant',
-          content: msg.text
-        })),
-        {
-          role: 'user',
-          content: userMessage
-        }
-      ];
+      // Decide if escalation is needed
+      const escalate = this.shouldEscalate(response);
 
-      // Call Anthropic API
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': config.openai.apiKey || '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', // Use your API key
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 1024,
-          system: systemPrompt,
-          messages: messages
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('API request failed');
+      if (escalate) {
+        return {
+          success: true,
+          message: response.message,
+          escalation: "Would you like to speak with a team member? I can have someone reach out to you.",
+        };
       }
 
-      const data = await response.json();
       return {
         success: true,
-        message: data.content[0].text,
-        confidence: 0.9
+        message: response.message,
       };
+
     } catch (error) {
-      console.error('Anthropic API error:', error);
-      throw error;
+      console.error('AI API error:', error);
+
+      // Fallback if API fails
+      const fallback = this.getFallbackResponse(message);
+      const escalate = this.shouldEscalate(fallback);
+
+      if (escalate) {
+        return {
+          success: fallback.success,
+          message: fallback.message,
+          escalation: "Would you like to speak with a team member? I can have someone reach out to you.",
+        };
+      }
+
+      return fallback;
     }
   }
 
+  /**
+   * Calls OpenRouter / Groq API
+   */
+  async callOpenRouterAPI(userMessage, systemPrompt = '', history = []) {
+    // Build conversation context
+    const messages = [
+      ...history.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      })),
+      { role: 'user', content: userMessage }
+    ];
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini', // Replace with your Groq model if needed
+        messages,
+        max_tokens: 1024
+      })
+    });
+
+    if (!response.ok) throw new Error('OpenRouter API request failed');
+
+    const data = await response.json();
+
+    // Extract AI message
+    const messageText = data?.choices?.[0]?.message?.content || "I'm not sure about that.";
+
+    return {
+      success: true,
+      message: messageText,
+      confidence: 0.9
+    };
+  }
+
+  /**
+   * Keyword-based fallback responses
+   */
   getFallbackResponse(message) {
     const lowercaseMsg = message.toLowerCase();
-    
-    // Simple keyword matching for common queries
+
     if (lowercaseMsg.includes('hello') || lowercaseMsg.includes('hi')) {
-      return {
-        success: true,
-        message: "Hello! How can I assist you today?",
-        confidence: 0.8
-      };
+      return { success: true, message: "Hello! How can I assist you today?", confidence: 0.8 };
     }
-    
+
     if (lowercaseMsg.includes('price') || lowercaseMsg.includes('cost')) {
       return {
         success: true,
@@ -83,7 +107,7 @@ class AIService {
         confidence: 0.7
       };
     }
-    
+
     if (lowercaseMsg.includes('contact') || lowercaseMsg.includes('phone') || lowercaseMsg.includes('email')) {
       return {
         success: true,
@@ -91,7 +115,7 @@ class AIService {
         confidence: 0.8
       };
     }
-    
+
     if (lowercaseMsg.includes('thank')) {
       return {
         success: true,
@@ -100,7 +124,7 @@ class AIService {
       };
     }
 
-    // Default fallback for unrecognized queries
+    // Default fallback
     return {
       success: false,
       message: "I'm not sure about that, but I'd be happy to connect you with someone who can help. Would you like to speak with a team member?",
@@ -109,13 +133,18 @@ class AIService {
     };
   }
 
-  // Simulate AI confidence check
+  /**
+   * Decide whether to escalate to human
+   */
   shouldEscalate(response) {
     return response.confidence < 0.6 || response.needsEscalation;
   }
 
-  // Pattern-based responses for demo without API
-  async getSmartResponse(message, systemPrompt) {
+  /**
+   * Demo / pattern-based smart responses (optional)
+   * Can be used if API key is missing
+   */
+  async getSmartResponse(message, systemPrompt = '') {
     const responses = {
       greeting: [
         "Hello! How can I help you today?",
@@ -140,7 +169,7 @@ class AIService {
     };
 
     const msg = message.toLowerCase();
-    
+
     if (msg.match(/hello|hi|hey|good morning|good afternoon/)) {
       return {
         success: true,
@@ -148,7 +177,7 @@ class AIService {
         confidence: 0.9
       };
     }
-    
+
     if (msg.match(/thank|thanks|appreciate/)) {
       return {
         success: true,
@@ -156,7 +185,7 @@ class AIService {
         confidence: 0.9
       };
     }
-    
+
     if (msg.match(/help|assist|support/)) {
       return {
         success: true,
