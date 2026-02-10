@@ -4,7 +4,25 @@ class AIService {
   constructor() {
     this.apiUrl = config.backend.apiUrl;
     this.conversationHistory = [];
-    this.apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;  // OpenRouter / Groq API key
+    this.apiKey = this.resolveApiKey();
+    this.model = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+  }
+
+
+  resolveApiKey() {
+    const rawKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+
+    if (typeof rawKey !== 'string') {
+      return '';
+    }
+
+    // Normalize accidental wrapping quotes/spaces from env files
+    const normalizedKey = rawKey.trim().replace(/^['"]|['"]$/g, '');
+    return normalizedKey;
+  }
+
+  hasOpenRouterCompatibleKey() {
+    return typeof this.apiKey === 'string' && this.apiKey.startsWith('sk-or-');
   }
 
   /**
@@ -13,6 +31,12 @@ class AIService {
    */
   async sendMessage(message, systemPrompt = '', conversationHistory = []) {
     try {
+      // If no compatible OpenRouter key is configured, use local smart responses first
+      if (!this.hasOpenRouterCompatibleKey()) {
+        console.warn('OpenRouter key missing/invalid. Set VITE_OPENROUTER_API_KEY and restart the app. Falling back to local smart responses.');
+        return this.getSmartResponse(message, systemPrompt);
+      }
+
       const response = await this.callOpenRouterAPI(message, systemPrompt, conversationHistory);
 
       // Decide if escalation is needed
@@ -34,13 +58,19 @@ class AIService {
     } catch (error) {
       console.error('AI API error:', error);
 
-      // Fallback if API fails
+      // If API fails, try smart local response first
+      const smart = await this.getSmartResponse(message, systemPrompt);
+      if (smart.success && smart.confidence >= 0.6) {
+        return smart;
+      }
+
+      // Then fallback keyword response
       const fallback = this.getFallbackResponse(message);
       const escalate = this.shouldEscalate(fallback);
 
       if (escalate) {
         return {
-          success: fallback.success,
+          success: true,
           message: fallback.message,
           escalation: "Would you like to speak with a team member? I can have someone reach out to you.",
         };
@@ -69,17 +99,29 @@ class AIService {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'AI Chatbot Widget',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Replace with your Groq model if needed
+        model: this.model,
         messages,
         max_tokens: 1024
       })
     });
 
-    if (!response.ok) throw new Error('OpenRouter API request failed');
+    const rawBody = await response.text();
+    let data = null;
 
-    const data = await response.json();
+    try {
+      data = rawBody ? JSON.parse(rawBody) : null;
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      const apiMessage = data?.error?.message || rawBody || `${response.status} ${response.statusText}`;
+      throw new Error(`OpenRouter API request failed (${response.status}): ${apiMessage}`);
+    }
 
     // Extract AI message
     const messageText = data?.choices?.[0]?.message?.content || "I'm not sure about that.";
@@ -164,9 +206,9 @@ class AIService {
         "My pleasure! Is there anything else you'd like to know?"
       ],
       unknown: [
-        "I'm not entirely sure about that. Would you like me to connect you with a specialist?",
-        "That's a great question! Let me get you in touch with someone who can provide the best answer.",
-        "I want to make sure you get accurate information. Would you like to speak with a team member?"
+        "That’s a good question about \"{topic}\" — here’s what I can share based on what I know so far.",
+        "I can help with \"{topic}\". Could you share a bit more detail so I can give a better answer?",
+        "I can provide general guidance on \"{topic}\", and if needed I can also connect you with a specialist."
       ]
     };
 
@@ -196,12 +238,15 @@ class AIService {
       };
     }
 
-    // For other queries, suggest escalation
+    // For unknown queries, return a useful answer first and avoid immediate escalation
+    const topic = message.trim() || 'that';
+    const template = responses.unknown[Math.floor(Math.random() * responses.unknown.length)];
+
     return {
-      success: false,
-      message: responses.unknown[Math.floor(Math.random() * responses.unknown.length)],
-      confidence: 0.4,
-      needsEscalation: true
+      success: true,
+      message: template.replace('{topic}', topic),
+      confidence: 0.7,
+      needsEscalation: false
     };
   }
 }

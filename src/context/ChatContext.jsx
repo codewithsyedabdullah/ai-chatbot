@@ -30,6 +30,7 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [sessionId] = useState(() => `session_${Date.now()}`);
   const [conversationSaved, setConversationSaved] = useState(false);
+  const [awaitingLeadConfirmation, setAwaitingLeadConfirmation] = useState(false);
 
   const addMessage = useCallback((text, sender = 'user') => {
     const message = {
@@ -49,6 +50,7 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
     
     // Check if it's a request to talk to human
     if (reply.toLowerCase().includes('talk') || reply.toLowerCase().includes('admin') || reply.toLowerCase().includes('human')) {
+      setAwaitingLeadConfirmation(false);
       setShowLeadForm(true);
       setTimeout(() => {
         addMessage(
@@ -78,11 +80,14 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
         addMessage(response.message, 'bot');
         setIsTyping(false);
         
-        // Ask before opening lead form (do not force the form immediately)
+        // Ask for escalation and wait for user confirmation before opening the form
         if (response.escalation) {
           setTimeout(() => {
             addMessage(response.escalation, 'bot');
+            setAwaitingLeadConfirmation(true);
           }, 1000);
+        } else {
+          setAwaitingLeadConfirmation(false);
         }
       }, 1000 + Math.random() * 1000); // Random delay for natural feel
       
@@ -94,6 +99,7 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
           'bot'
         );
         setIsTyping(false);
+        setAwaitingLeadConfirmation(false);
         setShowLeadForm(true);
       }, 1000);
     }
@@ -101,13 +107,25 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
 
   const handleSendMessage = useCallback(async (text) => {
     if (!text.trim()) return;
+
+    const normalized = text.trim().toLowerCase();
+    const asksForHuman = /talk to (a )?(person|human|agent|admin)|human|agent|representative|specialist|team member/.test(normalized);
+    const confirmsEscalation = /^(yes|yeah|yep|sure|ok|okay|please|connect me)/.test(normalized);
+
+    if (asksForHuman || (awaitingLeadConfirmation && confirmsEscalation)) {
+      addMessage(text, 'user');
+      addMessage("Perfect — please share your contact details and our team will reach out.", 'bot');
+      setAwaitingLeadConfirmation(false);
+      setShowLeadForm(true);
+      return;
+    }
     
     // Add user message
     addMessage(text, 'user');
     
     // Process AI response
     await sendMessageToAI(text);
-  }, [addMessage, sendMessageToAI]);
+  }, [addMessage, awaitingLeadConfirmation, sendMessageToAI]);
 
   const handleLeadSubmit = useCallback(async (leadData) => {
     try {
@@ -169,6 +187,7 @@ export const ChatProvider = ({ children, industry = 'default' }) => {
     ]);
     setUserInfo(null);
     setShowLeadForm(false);
+    setAwaitingLeadConfirmation(false);
     setIsTyping(false);
   }, [config]);
 
