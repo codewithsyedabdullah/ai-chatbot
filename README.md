@@ -421,8 +421,7 @@ Contributions welcome! Please:
 ## 📧 Support
 
 For issues and questions:
-- GitHub Issues: [Create an issue]
-- Email: your-email@example.com
+- Email: abdullah2684511@gmail.com
 
 ## 🙏 Acknowledgments
 
@@ -432,8 +431,6 @@ For issues and questions:
 - Storage powered by Supabase
 
 ---
-
-**Made with ❤️ for Aykays Agency Assessment**
 
 ## 🎯 Assessment Requirements Checklist
 
